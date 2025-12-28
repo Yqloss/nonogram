@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>NEO-NONOGRAM | FLUID</title>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            /* --- 极简配色 --- */
+            --bg-color: #121212;
+            --panel-bg: #1e1e1e;
+            --input-bg: #2d2d2d;
+            --grid-bg: #1a1a1a;
+            
+            --accent-primary: #4db6ac; 
+            --accent-secondary: #e0e0e0;
+            --error-color: #ef5350;
+            
+            --text-main: #d0d0d0;
+            --text-dim: #666;
+            
+            --clue-text: #888;
+            --clue-done: #333;
+
+            --cell-size: 28px;
+            
+            /* 手机端进一步压缩格子基础尺寸，以便放下更多内容 */
+            @media (max-width: 600px) {
+                --cell-size: 22px; 
+            }
+        }
+
+        * { box-sizing: border-box; user-select: none; -webkit-user-drag: none; -webkit-tap-highlight-color: transparent; outline: none; }
+
+        body {
+            margin: 0; padding: 0; /* 去掉所有外边距 */
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: 'JetBrains Mono', monospace;
+            height: 100vh;
+            width: 100vw;
+            display: flex; flex-direction: column;
+            align-items: center; 
+            overflow: hidden; 
+            cursor: default;
+            touch-action: none; 
+        }
+
+        /* 极简背景 */
+        .bg-grid {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-image: radial-gradient(#222 1px, transparent 1px);
+            background-size: 20px 20px; opacity: 0.2;
+            z-index: -2; pointer-events: none;
+        }
+
+        /* 紧凑标题 */
+        header { 
+            flex-shrink: 0; 
+            padding: 8px 0 4px 0;
+            text-align: center; 
+            width: 100%;
+            background: var(--bg-color);
+            z-index: 20;
+        }
+        h1 { 
+            font-size: 1.2rem; margin: 0; color: #ccc; letter-spacing: 1px; font-weight: 800; 
+            display: inline-block;
+        }
+
+        /* 无边框控制面板 */
+        .controls-panel {
+            flex-shrink: 0;
+            background: var(--bg-color); /* 融入背景 */
+            padding: 0 10px 10px 10px;
+            display: flex; flex-direction: column; gap: 6px;
+            width: 100%; max-width: 500px;
+            z-index: 10;
+        }
+
+        /* 数据行 */
+        .stats-row {
+            display: flex; justify-content: space-between;
+            font-size: 0.8rem; font-weight: bold;
+            color: var(--text-dim);
+            padding: 0 5px;
+        }
+        
+        .stat-item { display: flex; align-items: center; gap: 8px; }
+        .stat-val { color: var(--accent-primary); min-width: 40px; text-align: right;}
+        .stat-val.err { color: var(--error-color); }
+
+        /* 设置行 */
+        .settings-row { 
+            display: flex; gap: 8px; align-items: center; justify-content: space-between;
+            background: var(--panel-bg);
+            padding: 4px 8px;
+            border-radius: 4px;
+        }
+        
+        .input-group { display: flex; align-items: center; gap: 4px; }
+        label { font-size: 0.65rem; color: var(--text-dim); font-weight: bold; }
+        
+        input[type="number"] {
+            background: var(--input-bg); 
+            border: none; /* 去边框 */
+            color: var(--accent-primary);
+            padding: 2px 0; border-radius: 2px; 
+            text-align: center; font-weight: bold; font-family: inherit;
+            width: 35px; height: 24px; font-size: 0.8rem;
+        }
+        
+        .range-wrapper { flex: 1; margin: 0 8px; display: flex; align-items: center; }
+        input[type=range] { width: 100%; accent-color: var(--accent-primary); height: 3px; cursor: pointer; }
+
+        .btn {
+            padding: 0 10px; height: 24px;
+            background: var(--input-bg); border: none; /* 去边框 */
+            color: #ccc; font-weight: bold; cursor: pointer; border-radius: 2px;
+            text-transform: uppercase; font-size: 0.7rem; white-space: nowrap;
+        }
+        .btn:hover { background: #3d3d3d; color: #fff; }
+
+        /* --- 游戏区容器 --- */
+        #board-wrapper {
+            flex: 1; 
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start; /* 顶部对齐 */
+            position: relative;
+            overflow: hidden; 
+            padding: 0; /* 移除内边距，最大化利用屏幕 */
+        }
+
+        /* 棋盘实体 - 无背景板模式 */
+        #game-board {
+            display: grid; 
+            grid-template-columns: max-content max-content; 
+            grid-template-rows: max-content max-content;
+            gap: 2px; padding: 0; /* 紧贴 */
+            /* 移除背景和边框 */
+            background: transparent; 
+            border: none;
+            box-shadow: none;
+            
+            touch-action: none;
+            transform-origin: top center; 
+            transition: transform 0.2s ease-out;
+            margin-top: 10px; /* 给上方留一点点呼吸空间 */
+        }
+
+        /* 角落工具区 */
+        .corner-tools {
+            display: flex;
+            flex-direction: column; 
+            justify-content: center;
+            align-items: center;
+            gap: 2px;
+            padding: 2px;
+        }
+
+        .mini-tool-btn {
+            width: 100%; flex: 1;
+            border: none; /* 去边框 */
+            background: var(--panel-bg); color: #666;
+            font-size: 16px; font-weight: bold;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; border-radius: 2px;
+            transition: 0.1s;
+            min-width: 40px; 
+            min-height: 25px;
+        }
+        .mini-tool-btn.active {
+            background: var(--accent-primary); color: #000;
+        }
+        .mini-tool-btn.active.mode-cross { background: var(--accent-secondary); }
+
+        /* 提示数字 */
+        .clues-col, .clues-row { 
+            display: flex; gap: 1px; font-size: 10px; 
+            color: var(--clue-text); font-weight: 600; 
+        }
+        .clues-col { align-items: flex-end; padding-bottom: 2px; }
+        .clues-row { flex-direction: column; align-items: flex-end; padding-right: 2px; }
+        
+        .clue-group-col { width: var(--cell-size); display: flex; flex-direction: column; align-items: center; justify-content: flex-end; flex-shrink: 0; }
+        .clue-group-row { height: var(--cell-size); display: flex; align-items: center; justify-content: flex-end; gap: 4px; white-space: nowrap; flex-shrink: 0; }
+        
+        .clue-num.done { color: var(--clue-done); opacity: 0.3; }
+
+        /* 网格本身 */
+        #grid { 
+            display: grid; 
+            gap: 1px; 
+            background: var(--grid-bg); 
+            border: none; /* 移除网格最外层边框 */
+        }
+
+        .cell {
+            width: var(--cell-size); height: var(--cell-size);
+            background-color: #222; /* 稍微深一点的格子色 */
+            position: relative; cursor: pointer;
+        }
+        
+        /* 辅助线 - 使用稍亮的颜色 */
+        .cell.bold-r { border-right: 1px solid #444; }
+        .cell.bold-b { border-bottom: 1px solid #444; }
+
+        /* --- 状态 --- */
+        .cell.filled {
+            background-color: var(--accent-primary);
+            box-shadow: none; /* 扁平化 */
+            z-index: 1;
+            animation: pop 0.1s ease-out;
+        }
+        
+        .cell.crossed { background-color: #1a1a1a; }
+        .cell.crossed::before, .cell.crossed::after {
+            content: ''; position: absolute; top: 50%; left: 50%;
+            width: 60%; height: 2px; background-color: var(--accent-secondary);
+            border-radius: 0; box-shadow: none;
+        }
+        .cell.crossed::before { transform: translate(-50%, -50%) rotate(45deg); }
+        .cell.crossed::after { transform: translate(-50%, -50%) rotate(-45deg); }
+
+        .cell.auto-crossed::before, .cell.auto-crossed::after { animation: auto-fade 0.2s ease-out forwards; }
+        @keyframes auto-fade { 0% { opacity: 0; width: 0; } 100% { opacity: 1; width: 60%; } }
+
+        .cell.filled.error { background-color: var(--error-color); }
+        .cell.crossed.error::before, .cell.crossed.error::after { background-color: var(--error-color); height: 2px; }
+        .cell.error { animation: shake 0.3s both !important; }
+
+        @keyframes pop { 0% { transform: scale(0.5); } 100% { transform: scale(1); } }
+        @keyframes shake { 25% {transform:translateX(-2px)} 75% {transform:translateX(2px)} }
+
+        /* 计数提示 */
+        #drag-tip {
+            position: fixed; pointer-events: none;
+            background: var(--accent-primary); color: #000;
+            padding: 2px 6px; border-radius: 2px; font-size: 12px; font-weight: bold;
+            z-index: 1000; display: none; box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+        }
+
+        /* 胜利 */
+        #victory-modal {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9); display: flex; flex-direction: column;
+            justify-content: center; align-items: center; z-index: 1100;
+            opacity: 0; pointer-events: none; transition: 0.2s; backdrop-filter: blur(2px);
+        }
+        #victory-modal.show { opacity: 1; pointer-events: all; }
+        .vic-title { font-size: 2.5rem; color: #fff; margin-bottom: 20px; font-weight: 800; letter-spacing: 2px;}
+        .vic-stats { display: flex; gap: 30px; margin-bottom: 30px; }
+        .vic-stat-item { text-align: center; }
+        .vic-val { font-size: 1.5rem; font-weight: bold; color: var(--accent-primary); }
+        .vic-val.err { color: var(--error-color); }
+        .vic-label { color: var(--text-dim); font-size: 0.7rem; margin-top: 5px; }
+        .vic-btn-row { display: flex; gap: 15px; }
+        .vic-btn-row .btn { min-width: 100px; height: 40px; font-size: 0.9rem; border-radius: 2px; background: var(--input-bg); }
+        .vic-btn-row .btn:hover { background: #444; }
+
+    </style>
+</head>
+<body>
+
+    <div class="bg-grid"></div>
+    <div id="drag-tip">0</div>
+
+    <header><h1>NONOGRAM</h1></header>
+
+    <div class="controls-panel">
+        <div class="stats-row">
+            <div class="stat-item"><span>TIME</span><span class="stat-val" id="timer-display">00:00</span></div>
+            <div class="stat-item"><span>ERR</span><span class="stat-val err" id="error-display">0</span></div>
+        </div>
+        <div class="settings-row">
+            <div class="input-group">
+                <label>W</label><input type="number" id="inp-w" value="10" min="5" max="25">
+            </div>
+            <div class="input-group">
+                <label>H</label><input type="number" id="inp-h" value="10" min="5" max="25">
+            </div>
+            <div class="range-wrapper">
+                <input type="range" id="inp-d" min="0.1" max="0.9" step="0.05" value="0.55">
+            </div>
+            <button class="btn" onclick="Game.newGame()">RESET</button>
+        </div>
+    </div>
+
+    <div id="board-wrapper">
+        <div id="game-board">
+            <div class="corner-tools">
+                <div class="mini-tool-btn active" id="btn-fill" onclick="Game.setMobileTool('fill')">■</div>
+                <div class="mini-tool-btn" id="btn-cross" onclick="Game.setMobileTool('cross')">×</div>
+            </div>
+            <div class="clues-col" id="header-clues"></div>
+            <div class="clues-row" id="side-clues"></div>
+            <div id="grid"></div>
+        </div>
+    </div>
+
+    <div id="victory-modal">
+        <div class="vic-title">CLEARED</div>
+        <div class="vic-stats">
+            <div class="vic-stat-item"><div class="vic-val" id="vic-time">00:00</div><div class="vic-label">TIME</div></div>
+            <div class="vic-stat-item"><div class="vic-val err" id="vic-errors">0</div><div class="vic-label">ERRORS</div></div>
+        </div>
+        <div class="vic-btn-row">
+            <button class="btn" onclick="Game.viewMap()">VIEW MAP</button>
+            <button class="btn" onclick="Game.newGame()">NEW GAME</button>
+        </div>
+    </div>
+
+<script>
+    /* Generator Logic (Standard) */
+    const Solver = (() => {
+        function _recurse(count, line, current, solution, index, numbers, state) {
+            if (numbers.length === 0) {
+                for (let i = index; i < count; ++i) { if (current[i] === 1) return; current[i] = -1; }
+                if (state.first) { for (let i = 0; i < count; ++i) if (line[i] === 0) solution[i] = current[i]; state.first = false; }
+                else { for (let i = 0; i < count; ++i) if (line[i] === 0 && solution[i] !== current[i]) solution[i] = 0; }
+                return;
+            }
+            let num = numbers[0], rest = numbers.slice(1);
+            for (let i = index; i <= count - num; i++) {
+                let ok = true;
+                for (let j = 0; j < num; j++) if (current[i + j] === -1) { ok = false; break; }
+                if (ok) {
+                    for (let j = 0; j < num; j++) current[i + j] = 1;
+                    if (i + num < count) { if (current[i + num] !== 1) { current[i + num] = -1; _recurse(count, line, current, solution, i + num + 1, rest, state); } }
+                    else { _recurse(count, line, current, solution, i + num, rest, state); }
+                }
+                for (let j = 0; j < num + 1 && i + j < count; j++) current[i + j] = line[i + j];
+                if (current[i] === 1) { for (let j = index; j < i; j++) current[j] = line[j]; break; }
+                current[i] = -1;
+            }
+        }
+        function solveLine(count, line, nums) {
+            let cur = [...line], sol = [...line], state = { first: true };
+            _recurse(count, line, cur, sol, 0, nums, state);
+            let changed = false;
+            if (!state.first) for (let i = 0; i < count; i++) if (line[i] !== sol[i]) { line[i] = sol[i]; changed = true; }
+            return changed;
+        }
+        function checkLogic(w, h, grid, xC, yC) {
+            let sXC = xC.map(a => a.map(o => o.val));
+            let sYC = yC.map(a => a.map(o => o.val));
+            let temp = grid.map(r=>[...r]), line = new Array(Math.max(w, h)), chg = true, loop = 0;
+            while (chg && loop++ < 500) {
+                chg = false;
+                for (let x = 0; x < w; x++) { for (let y = 0; y < h; y++) line[y] = temp[x][y]; if (solveLine(h, line, sXC[x])) { chg = true; for (let y = 0; y < h; y++) temp[x][y] = line[y]; } }
+                for (let y = 0; y < h; y++) { for (let x = 0; x < w; x++) line[x] = temp[x][y]; if (solveLine(w, line, sYC[y])) { chg = true; for (let x = 0; x < w; x++) temp[x][y] = line[x]; } }
+            }
+            for(let x=0; x<w; x++) for(let y=0; y<h; y++) if(temp[x][y] === 0) return false;
+            return true;
+        }
+        function getClues(grid, w, h) {
+            let xC = [], yC = [];
+            for (let x = 0; x < w; x++) { 
+                let a = [], c = 0, start = -1; 
+                for (let y = 0; y < h; y++) { 
+                    if (grid[x][y] === 1) { if (c === 0) start = y; c++; } 
+                    else { if (c > 0) { a.push({val: c, s: start, e: y-1}); c = 0; } } 
+                } 
+                if (c > 0) a.push({val: c, s: start, e: h-1}); xC.push(a); 
+            }
+            for (let y = 0; y < h; y++) { 
+                let a = [], c = 0, start = -1; 
+                for (let x = 0; x < w; x++) { 
+                    if (grid[x][y] === 1) { if (c === 0) start = x; c++; } 
+                    else { if (c > 0) { a.push({val: c, s: start, e: x-1}); c = 0; } } 
+                } 
+                if (c > 0) a.push({val: c, s: start, e: w-1}); yC.push(a); 
+            }
+            return { x: xC, y: yC };
+        }
+        function generate(w, h, d) {
+            let att = 0;
+            while (att++ < 2000) {
+                let g = []; for (let x = 0; x < w; x++) { g[x] = []; for (let y = 0; y < h; y++) g[x][y] = (Math.random() < d) ? 1 : -1; }
+                let cl = getClues(g, w, h);
+                let sg = Array(w).fill(0).map(()=>Array(h).fill(0));
+                if (checkLogic(w, h, sg, cl.x, cl.y)) {
+                    let has = false; for(let x=0;x<w;x++) for(let y=0;y<h;y++) if(g[x][y]===1) has=true;
+                    if(has || d < 0.1) return { grid: g, clues: cl };
+                }
+            }
+            return null;
+        }
+        return { generate };
+    })();
+
+    const Game = {
+        w: 10, h: 10, d: 0.55,
+        solution: null, clues: null,
+        playerState: [], errorMap: [], 
+        isDown: false, dragAction: null, currentMobileTool: 'fill', 
+        dragStart: null, dragAxis: null,
+        startTime: null, timerInterval: null,
+        errorCount: 0, isGameOver: false, hasStarted: false,
+        clueEls: { x: [], y: [] },
+
+        init() {
+            window.addEventListener('mouseup', () => this.endDrag());
+            window.addEventListener('mousemove', (e) => this.handleMove(e.clientX, e.clientY));
+            window.addEventListener('resize', () => this.autoScale());
+            
+            const gridEl = document.getElementById('grid');
+            gridEl.addEventListener('touchstart', (e) => this.handleTouchStart(e), {passive: false});
+            gridEl.addEventListener('touchmove', (e) => this.handleTouchMove(e), {passive: false});
+            gridEl.addEventListener('touchend', (e) => this.endDrag());
+
+            document.addEventListener('contextmenu', e => e.preventDefault());
+            this.newGame();
+        },
+
+        newGame() {
+            this.stopTimer();
+            this.w = Math.max(5, Math.min(25, parseInt(document.getElementById('inp-w').value)));
+            this.h = Math.max(5, Math.min(25, parseInt(document.getElementById('inp-h').value)));
+            this.d = parseFloat(document.getElementById('inp-d').value);
+            
+            document.getElementById('victory-modal').classList.remove('show');
+            this.isGameOver = false;
+            this.hasStarted = false;
+            this.errorCount = 0;
+            this.updateStatsUI();
+            this.setMobileTool('fill'); 
+
+            const puzzle = Solver.generate(this.w, this.h, this.d);
+            if (!puzzle) { alert("Generation failed."); return; }
+            
+            this.solution = puzzle.grid;
+            this.clues = puzzle.clues;
+            this.playerState = Array(this.w).fill(0).map(() => Array(this.h).fill(0));
+            this.errorMap = Array(this.w).fill(0).map(() => Array(this.h).fill(false));
+            
+            this.buildDOM();
+            setTimeout(() => this.autoScale(), 50);
+        },
+
+        buildDOM() {
+            const grid = document.getElementById('grid');
+            const hC = document.getElementById('header-clues');
+            const sC = document.getElementById('side-clues');
+            grid.innerHTML = ''; hC.innerHTML = ''; sC.innerHTML = '';
+            
+            // max-content 允许提示区域根据数字长度自适应宽度
+            grid.style.gridTemplateColumns = `repeat(${this.w}, var(--cell-size))`;
+            
+            this.clueEls.x = [];
+            this.clueEls.y = [];
+
+            this.clues.x.forEach((col, idx) => {
+                const d = document.createElement('div'); d.className = 'clue-group-col';
+                let spans = [];
+                if (col.length) col.forEach(obj => {
+                    const s = document.createElement('span'); s.className = 'clue-num'; s.innerText = obj.val;
+                    d.appendChild(s); spans.push(s);
+                });
+                else { const s = document.createElement('span'); s.innerText = '0'; d.appendChild(s); }
+                hC.appendChild(d); this.clueEls.x[idx] = spans;
+            });
+
+            this.clues.y.forEach((row, idx) => {
+                const d = document.createElement('div'); d.className = 'clue-group-row';
+                let spans = [];
+                if (row.length) row.forEach(obj => {
+                    const s = document.createElement('span'); s.className = 'clue-num'; s.innerText = obj.val;
+                    d.appendChild(s); spans.push(s);
+                });
+                else { const s = document.createElement('span'); s.innerText = '0'; d.appendChild(s); }
+                sC.appendChild(d); this.clueEls.y[idx] = spans;
+            });
+
+            for (let y = 0; y < this.h; y++) {
+                for (let x = 0; x < this.w; x++) {
+                    const c = document.createElement('div');
+                    c.dataset.x = x; c.dataset.y = y;
+                    let cls = 'cell';
+                    if ((x+1)%5===0 && x!==this.w-1) cls += ' bold-r';
+                    if ((y+1)%5===0 && y!==this.h-1) cls += ' bold-b';
+                    c.className = cls;
+                    c.addEventListener('mousedown', e => this.onDown(x, y, e));
+                    grid.appendChild(c);
+                }
+            }
+        },
+
+        autoScale() {
+            const board = document.getElementById('game-board');
+            const wrapper = document.getElementById('board-wrapper');
+            if (!board || !wrapper) return;
+
+            board.style.transform = 'scale(1)';
+            
+            const availableW = wrapper.clientWidth; // Padding removed
+            const availableH = wrapper.clientHeight;
+            const boardW = board.scrollWidth;
+            const boardH = board.scrollHeight;
+
+            let scale = 1;
+            // Scale down if too big
+            if (boardW > availableW || boardH > availableH) {
+                scale = Math.min(availableW / boardW, availableH / boardH) * 0.98; // Leave small gap
+            }
+            
+            // Logic to allow scaling up slightly on very large screens for tiny puzzles?
+            // Currently only downscaling or 1:1 to keep pixel crispness
+            if (scale < 0.3) scale = 0.3; // Min limit
+            
+            board.style.transform = `scale(${scale})`;
+        },
+
+        setMobileTool(tool) {
+            this.currentMobileTool = tool;
+            document.getElementById('btn-fill').classList.toggle('active', tool === 'fill');
+            document.getElementById('btn-cross').classList.toggle('active', tool === 'cross');
+        },
+
+        onDown(x, y, e) {
+            if (this.isGameOver) return;
+            this.startTimer();
+            this.isDown = true;
+            this.dragStart = {x, y};
+            this.dragAxis = null;
+            const isRight = (e.button === 2);
+            this.dragAction = isRight ? 'cross' : 'fill';
+            this.showDragTip("1", e.clientX, e.clientY);
+            this.applyOp(x, y, this.dragAction);
+        },
+
+        handleMove(clientX, clientY) {
+            if (!this.isDown || this.isGameOver) return;
+            const el = document.elementFromPoint(clientX, clientY);
+            if (el && el.classList.contains('cell')) {
+                const x = parseInt(el.dataset.x);
+                const y = parseInt(el.dataset.y);
+                this.onEnter(x, y);
+            }
+            this.updateDragTipPosition(clientX, clientY);
+        },
+
+        handleTouchStart(e) {
+            if (e.touches.length > 1) return; 
+            e.preventDefault(); 
+            const touch = e.touches[0];
+            const el = document.elementFromPoint(touch.clientX, touch.clientY);
+            if (el && el.classList.contains('cell')) {
+                const x = parseInt(el.dataset.x);
+                const y = parseInt(el.dataset.y);
+                this.isDown = true;
+                this.startTimer();
+                this.dragStart = {x, y};
+                this.dragAxis = null;
+                this.dragAction = this.currentMobileTool;
+                this.showDragTip("1", touch.clientX, touch.clientY);
+                this.applyOp(x, y, this.dragAction);
+            }
+        },
+
+        handleTouchMove(e) {
+            if (!this.isDown) return;
+            e.preventDefault();
+            const touch = e.touches[0];
+            const el = document.elementFromPoint(touch.clientX, touch.clientY);
+            if (el && el.classList.contains('cell')) {
+                const x = parseInt(el.dataset.x);
+                const y = parseInt(el.dataset.y);
+                this.onEnter(x, y);
+            }
+            this.updateDragTipPosition(touch.clientX, touch.clientY);
+        },
+
+        endDrag() {
+            this.isDown = false;
+            this.dragStart = null;
+            this.dragAxis = null;
+            this.dragAction = null;
+            this.hideDragTip();
+        },
+
+        onEnter(x, y) {
+            const action = this.dragAction;
+            if (!this.dragAxis) {
+                if (x !== this.dragStart.x) this.dragAxis = 'x'; 
+                else if (y !== this.dragStart.y) this.dragAxis = 'y'; 
+            }
+            let count = 1;
+            if (this.dragAxis === 'x') {
+                const fixedY = this.dragStart.y;
+                const startX = Math.min(this.dragStart.x, x);
+                const endX = Math.max(this.dragStart.x, x);
+                count = endX - startX + 1;
+                for(let i = startX; i <= endX; i++) this.applyOp(i, fixedY, action);
+            } else if (this.dragAxis === 'y') {
+                const fixedX = this.dragStart.x;
+                const startY = Math.min(this.dragStart.y, y);
+                const endY = Math.max(this.dragStart.y, y);
+                count = endY - startY + 1;
+                for(let i = startY; i <= endY; i++) this.applyOp(fixedX, i, action);
+            } else {
+                this.applyOp(x, y, action);
+            }
+            document.getElementById('drag-tip').innerText = count;
+        },
+
+        applyOp(x, y, action) {
+            if (this.playerState[x][y] !== 0) return;
+            const target = this.solution[x][y];
+            let isError = false;
+            if (action === 'fill') {
+                if (target === 1) this.playerState[x][y] = 1;
+                else { this.playerState[x][y] = -1; this.errorMap[x][y] = true; isError = true; }
+            } else { // cross
+                if (target === -1) this.playerState[x][y] = -1;
+                else { this.playerState[x][y] = 1; this.errorMap[x][y] = true; isError = true; }
+            }
+            if (isError) { this.errorCount++; this.updateStatsUI(); }
+            this.updateCell(x, y);
+            this.checkClueState(x, y);
+            this.checkAutoCompletion(x, y);
+            this.checkWin();
+        },
+
+        startTimer() {
+            if (this.hasStarted) return;
+            this.hasStarted = true;
+            this.startTime = Date.now();
+            this.timerInterval = setInterval(() => { this.updateStatsUI(); }, 1000);
+        },
+        stopTimer() { if (this.timerInterval) clearInterval(this.timerInterval); this.timerInterval = null; },
+        getFormattedTime() {
+            if (!this.startTime) return "00:00";
+            const diff = Math.floor((Date.now() - this.startTime) / 1000);
+            return `${Math.floor(diff / 60).toString().padStart(2, '0')}:${(diff % 60).toString().padStart(2, '0')}`;
+        },
+        updateStatsUI() {
+            document.getElementById('error-display').innerText = this.errorCount;
+            document.getElementById('timer-display').innerText = this.hasStarted ? this.getFormattedTime() : "00:00";
+        },
+
+        showDragTip(val, x, y) {
+            const tip = document.getElementById('drag-tip');
+            tip.innerText = val;
+            tip.style.display = 'block';
+            this.updateDragTipPosition(x, y);
+        },
+        updateDragTipPosition(x, y) {
+            const tip = document.getElementById('drag-tip');
+            tip.style.left = (x - 30) + 'px';
+            tip.style.top = (y - 50) + 'px';
+        },
+        hideDragTip() { document.getElementById('drag-tip').style.display = 'none'; },
+
+        checkClueState(cx, cy) {
+            this.clues.y[cy].forEach((meta, idx) => {
+                let finished = true;
+                for (let x = meta.s; x <= meta.e; x++) if (this.playerState[x][cy] !== 1) { finished = false; break; }
+                const el = this.clueEls.y[cy][idx];
+                if (finished) el.classList.add('done'); else el.classList.remove('done');
+            });
+            this.clues.x[cx].forEach((meta, idx) => {
+                let finished = true;
+                for (let y = meta.s; y <= meta.e; y++) if (this.playerState[cx][y] !== 1) { finished = false; break; }
+                const el = this.clueEls.x[cx][idx];
+                if (finished) el.classList.add('done'); else el.classList.remove('done');
+            });
+        },
+
+        checkAutoCompletion(cx, cy) {
+            let rowTotalOn = 0, rowFoundOn = 0;
+            for(let c of this.clues.y[cy]) rowTotalOn += c.val;
+            for(let x=0; x<this.w; x++) { if (this.playerState[x][cy] === 1 && this.solution[x][cy] === 1) rowFoundOn++; }
+            if (rowFoundOn === rowTotalOn) {
+                for(let x=0; x<this.w; x++) { if (this.playerState[x][cy] === 0) { this.playerState[x][cy] = -1; this.updateCell(x, cy, true); } }
+            }
+            let colTotalOn = 0, colFoundOn = 0;
+            for(let c of this.clues.x[cx]) colTotalOn += c.val;
+            for(let y=0; y<this.h; y++) { if (this.playerState[cx][y] === 1 && this.solution[cx][y] === 1) colFoundOn++; }
+            if (colFoundOn === colTotalOn) {
+                for(let y=0; y<this.h; y++) { if (this.playerState[cx][y] === 0) { this.playerState[cx][y] = -1; this.updateCell(cx, y, true); } }
+            }
+        },
+
+        updateCell(x, y, isAuto = false) {
+            const idx = y * this.w + x;
+            const el = document.getElementById('grid').children[idx];
+            let classes = ['cell'];
+            if ((x+1)%5===0 && x!==this.w-1) classes.push('bold-r');
+            if ((y+1)%5===0 && y!==this.h-1) classes.push('bold-b');
+            
+            const val = this.playerState[x][y];
+            const isErr = this.errorMap[x][y];
+
+            if (val === 1) {
+                classes.push('filled');
+                if (isErr) classes.push('error');
+            } else if (val === -1) {
+                classes.push('crossed');
+                if (isErr) classes.push('error');
+                if (isAuto && !isErr) classes.push('auto-crossed');
+            }
+            el.className = classes.join(' ');
+        },
+
+        checkWin() {
+            let allFilled = true;
+            for (let x = 0; x < this.w; x++) {
+                for (let y = 0; y < this.h; y++) {
+                    if (this.playerState[x][y] === 0) { allFilled = false; break; }
+                }
+                if(!allFilled) break;
+            }
+            if (allFilled) {
+                this.isGameOver = true;
+                this.stopTimer();
+                this.hideDragTip();
+                document.getElementById('vic-time').innerText = this.getFormattedTime();
+                document.getElementById('vic-errors').innerText = this.errorCount;
+                document.getElementById('victory-modal').classList.add('show');
+            }
+        },
+
+        viewMap() { document.getElementById('victory-modal').classList.remove('show'); }
+    };
+
+    window.onload = () => Game.init();
+</script>
+</body>
+</html>
